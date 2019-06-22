@@ -1,4 +1,6 @@
-# sentiment_analysis
+# Sentiment Analysis (Andy)
+
+(Require data from Chuck: chuck@emadri.com)
 
 File "sentiment_1_DataManagement" : Preparation for data analysis (run first)
 
