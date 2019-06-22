@@ -1,0 +1,204 @@
+---
+title: "sentiment_by_category"
+author: "Huaian Yu"
+date: "June 17, 2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+full_data <- read.csv("sentiment_df_v1") #from "sentiment_1_v2"
+full_data <- na.omit(full_data)
+full_data <- full_data[,-1]
+library(tidyverse)
+library(packcircles)
+library(ggplot2)
+
+```
+
+```{r message=FALSE, warning=FALSE, echo = FALSE}
+circle_plot <- function(data, title){
+  packing <- circleProgressiveLayout(data$new_count, sizetype='area')
+  data <- data.frame(data, packing)
+  dat.gg <- circleLayoutVertices(packing, npoints=50)
+  p = ggplot()
+  
+  p = p +  geom_polygon(data = dat.gg, aes(x, y, group = id,
+                                           fill=as.factor(id)), 
+                        colour = "black", alpha = 0.6) +
+    geom_text(data = data, aes(x, y, size=new_count, label = value)) +
+    scale_size_continuous(range = c(1,4)) +
+    theme_void() + 
+    theme(legend.position="none") +
+    coord_equal() +
+    ggtitle(title)
+ return(p)
+}
+```
+###0. Introduction
+The data is from the Amazon's apparel review data.(For more detailed information: chuck@emadri.com) 
+
+I picked 1000 observations from the full dataset. Then extract adjetives from the "review_body". And judge the category of the product from the "product_tittle". The final dataset contains following variables:  
+
+-product_id: ID of the product being reviewed.
+
+-review_id: The ID of reviewer. 
+
+-attributes: Describes the attributes of the variable "value"
+
+-value: Words extraced from the customer review.
+
+-count: How many time does a single word appears in a single review massage. 
+
+-tf: Term frequency. 
+
+-weight: How rare is the word.
+
+-star_rating: The rating for the product, given by the reviewer.
+
+-item_name: Categories of products.
+
+-category: The category decided by me, for the covience of following analysis. Has 4 values: access(Accessories), top, bot and under(Underwear) (For more info: andy@emadri.com) . 
+
+```{r echo = FALSE}
+head(full_data, 10)
+```
+
+The purpose of this first step analysis, is to find a set of keywords that are associated with possitive review. Then, to see if these key words could show some insight about how could a customer satisfy with his/her purchase. 
+
+Here, I divide extracted into two groups: possitive and negative. Posstive words are from reviews rated with more than 3 stars. Negative words are from review rated with less than 3 stars. 
+
+In the following plots, words with larger circle means they are more frequently appeared in the review.
+
+
+###1. Accessories 
+```{r message=FALSE, warning=FALSE, echo = FALSE}
+access_df <- full_data[which(full_data$category == "access"),]
+access_df %>% 
+  filter(star_rating > 3) %>% 
+  group_by(value) %>%
+  mutate(new_count = sum(count)) %>% 
+  select(value,new_count) -> pos_access
+pos_access <- pos_access[!duplicated(pos_access$value),]
+
+access_df %>% 
+  filter(star_rating < 3) %>% 
+  group_by(value) %>%
+  mutate(new_count = sum(count)) %>% 
+  select(value,new_count) -> neg_access
+neg_access <- neg_access[!duplicated(neg_access$value),]
+```
+
+```{r message=FALSE, warning=FALSE, echo = FALSE, dpi = 300}
+circle_plot(pos_access, "Postive Words in the Review of Accessories")
+circle_plot(neg_access, "Negative Words in the Review of Accessories")
+```
+
+###2. Bottom
+```{r message=FALSE, warning=FALSE, echo = FALSE}
+bot_df <- full_data[which(full_data$category == "bot"),]
+bot_df %>% 
+  filter(star_rating > 3) %>% 
+  group_by(value) %>%
+  mutate(new_count = sum(count)) %>% 
+  select(value,new_count) -> pos_bot
+pos_bot <- pos_bot[!duplicated(pos_bot$value),]
+
+bot_df %>% 
+  filter(star_rating < 3) %>% 
+  group_by(value) %>%
+  mutate(new_count = sum(count)) %>% 
+  select(value,new_count) -> neg_bot
+neg_bot <- neg_bot[!duplicated(neg_bot$value),]
+```
+
+```{r message=FALSE, warning=FALSE, echo = FALSE, dpi = 300}
+circle_plot(pos_bot, "Postive Words in the Review of Bottom")
+circle_plot(neg_bot, "Negative Words in the Review of Bottom")
+```
+
+###3. Top
+```{r message=FALSE, warning=FALSE, echo = FALSE}
+top_df <- full_data[which(full_data$category == "top"),]
+top_df %>% 
+  filter(star_rating > 3) %>% 
+  group_by(value) %>%
+  mutate(new_count = sum(count)) %>% 
+  select(value,new_count) -> pos_top
+pos_top <- pos_top[!duplicated(pos_top$value),]
+
+top_df %>% 
+  filter(star_rating < 3) %>% 
+  group_by(value) %>%
+  mutate(new_count = sum(count)) %>% 
+  select(value,new_count) -> neg_top
+neg_top <- neg_top[!duplicated(neg_top$value),]
+
+
+```
+
+```{r message=FALSE, warning=FALSE, echo = FALSE, dpi = 300}
+circle_plot(pos_top, "Postive Words in the Review of Top")
+circle_plot(neg_top, "Negative Words in the Review of Top")
+```
+
+###4. Underwear
+```{r message=FALSE, warning=FALSE, echo = FALSE}
+under_df <- full_data[which(full_data$category == "under"),]
+under_df %>% 
+  filter(star_rating > 3) %>% 
+  group_by(value) %>%
+  mutate(new_count = sum(count)) %>% 
+  select(value,new_count) -> pos_under
+pos_under <- pos_under[!duplicated(pos_under$value),]
+
+under_df %>% 
+  filter(star_rating < 3) %>% 
+  group_by(value) %>%
+  mutate(new_count = sum(count)) %>% 
+  select(value,new_count) -> neg_under
+neg_under <- neg_under[!duplicated(neg_under$value),]
+
+```
+
+```{r message=FALSE, warning=FALSE, echo = FALSE, dpi = 300}
+circle_plot(pos_under, "Postive Words in the Review of Underwear")
+circle_plot(neg_under, "Negative Words in the Review of Underwear")
+```
+
+#5. Summary
+
+In general, there are 3 perspectives that affact the review of a product:
+
+1. How does the product look like:
+
+Example words: unique, beautiful, perfect, great, excellent, good, hot, nice, cute, awesome, fashionable, chic
+
+2. How's it feel to wear the product on:
+
+Example words: not heavy, soft, comfortable, adjustable, not too tight, not too large, stretchy, comfy, breathable
+
+3. How's the service offered by the seller:
+
+Example words: unbiased(description on the size/color of the product), honest, real, happy, promotional
+
+```{r message=FALSE, warning=FALSE, echo = FALSE}
+top10_access <- (pos_access[order(pos_access$new_count, decreasing = TRUE),])$value
+top10_access <- head(top10_access, 10)
+
+top10_bot <- (pos_bot[order(pos_bot$new_count, decreasing = TRUE),])$value
+top10_bot <- head(top10_bot, 10)
+
+top10_top <- (pos_top[order(pos_top$new_count, decreasing = TRUE),])$value
+top10_top <- head(top10_top, 10)
+
+top10_under <- (pos_under[order(pos_under$new_count, decreasing = TRUE),])$value
+top10_under <- head(top10_under, 10)
+
+df_sum <- data.frame(top10_access, top10_bot, top10_top, top10_under)
+inter1 <- intersect(top10_access, top10_bot)
+inter2 <- intersect(top10_top, top10_under)
+inter3 <- intersect(inter1, inter2)
+```
+
+

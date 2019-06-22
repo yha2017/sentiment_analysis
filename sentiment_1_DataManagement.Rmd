@@ -1,0 +1,207 @@
+---
+title: "sentiment_1_DataManagement"
+author: "Huaian Yu"
+date: "June 22, 2019"
+output: html_document
+---
+
+#(function 1: DF to Matrix)
+```{r}
+#Requirement: Input data fram has only two columns: id and text
+#Output: matrix of single words with count.
+
+clean_corpus <- function(corpus){
+  corpus <- tm_map(corpus, stripWhitespace)
+  corpus <- tm_map(corpus, removeNumbers)
+  corpus <- tm_map(corpus, removePunctuation)
+  corpus <- tm_map(corpus, content_transformer(tolower))
+  corpus <- tm_map(corpus, removeWords, stopwords("english"))
+  return(corpus)
+}
+
+df_to_matrix <- function(data){
+  #Make a VCorpus from a data frame
+  names(data) <- c("doc_id", "text")
+  # Create a DataframeSource: df_source
+  df_source <- DataframeSource(data)
+  # Convert df_source to a corpus: df_corpus
+  df_corpus <- VCorpus(df_source)
+  
+  clean_corp <- clean_corpus(df_corpus)
+
+  # Create the dtm from the corpus: df_corpus
+  dtm <- DocumentTermMatrix(clean_corp)
+  # Convert category_dtm to a matrix: category_m
+  words_matrix <- as.matrix(dtm)
+  
+  return(words_matrix)
+}
+```
+
+
+#1. Load data and library:
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(lubridate)
+library(tidytext)
+library(gutenbergr)
+library(janeaustenr)
+library(qdap)
+library(dplyr)
+library(tm)
+library(wordcloud)
+library(plotrix)
+library(dendextend)
+library(ggplot2)
+library(ggthemes)
+library(RWeka)
+library(tidytext)
+library(tidyr)
+library(data.table)
+library(NLP)
+library(openNLP)
+library(openNLPmodels.en)
+library(sqldf)
+library(udpipe)
+library(dplyr)
+library(RSQLite)
+```
+
+```{r}
+con <- dbConnect(SQLite(), "amazon.db")
+dbListTables(con)
+res <- dbSendQuery(con, "SELECT product_id, review_id, review_body, star_rating, product_title FROM fulldata LIMIT 1000")
+raw <- dbFetch(res)
+review_data <- raw[,c("product_id", "review_body")]
+category_data <- raw[,c("product_id", "product_title")]
+
+review_data$review_body <- removeNumbers(review_data$review_body)
+review_data$review_body <- removePunctuation(review_data$review_body)
+review_data$review_body <- tolower(review_data$review_body)
+
+category_data$product_title <- removeNumbers(category_data$product_title)
+category_data$product_title <- removePunctuation(category_data$product_title)
+category_data$product_title <- tolower(category_data$product_title)
+```
+
+#2. Creat corpus then DTM:
+```{r}
+category_m <- df_to_matrix(category_data)
+review_m <- df_to_matrix(review_data)
+```
+
+#3. Extract category :
+```{r}
+baby_string <- colnames(category_m)
+cat_wordlist <- read.csv("all_category_words_list.txt", sep="")
+x <- as.data.frame(baby_string)
+names(x) <- "words"
+stats <- subset(x, words %in% cat_wordlist$words)
+index <- which(baby_string %in% stats$words)
+submatrix_cat <- category_m[,index]
+
+cat_df <- data.frame(submatrix_cat)
+cat_df  <- setDT(cat_df, keep.rownames = TRUE)[]
+names(cat_df)[1] <- "product_id"
+
+#Unpivoting data
+cat_df %>%
+gather(words, count, -product_id) -> cat_df
+cat_df <-cat_df[order(cat_df$product_id),]
+
+#Delete rows with 0
+row_sub1 = apply(cat_df, 1, function(row) all(row !=0 ))
+cat_df <- cat_df[row_sub1,]
+cat_df <- cat_df[!duplicated(cat_df$product_id),]
+
+cat_df <- merge(x = cat_df, y = cat_wordlist, by = "words", all.x = TRUE)
+
+cat_df <- cat_df[,c("product_id", "words", "tags")]
+names(cat_df) <- c("product_id", "item_name", "category")
+rownames(cat_df) <- c()
+```
+
+#4. Extract adj :
+```{r}
+baby_string <- colnames(review_m)
+ud_model <- udpipe_download_model(language = "english")
+ud_model <- udpipe_load_model(ud_model$file_model)
+x <- udpipe_annotate(ud_model, x = baby_string)
+x <- as.data.frame(x)
+stats <- subset(x, upos %in% c("ADJ")) 
+adjs <- stats$token
+index_JJ <- which(baby_string %in% adjs)
+submatrix_JJ <- review_m[,index_JJ]
+adj_df <- data.frame(submatrix_JJ)
+adj_df  <- setDT(adj_df, keep.rownames = TRUE)[]
+names(adj_df)[1] <- "product_id"
+
+#Unpivoting data
+adj_df %>%
+gather(adj, count, -product_id) -> adj_df
+#Delete rows with 0
+adj_df %>% 
+  filter(count != 0) -> adj_df
+
+#Colors
+color_collection <- c("red", "orange", "yellow", "green", "blue", "purple", "brown", "magenta", "tan", "cyan", "olive", "maroon", "navy", "aquamarine", "turquoise", "silver", "lime", "teal", "indigo", "violet", "pink", "black", "whitem", "gray" , "grey")
+
+#Comfy
+comfort_collection <- c("comfortable", "comforatable", "comfy")
+
+#Attributes
+adj_df$attribute <- rep("", nrow(adj_df))
+for(i in 1:nrow(adj_df)){
+  if (adj_df$adj[i] %in% color_collection){
+    adj_df$attribute[i] <- "color"
+  }else if(adj_df$adj[i] %in% comfort_collection){
+    adj_df$attribute[i] <- "comfort"
+  }else{
+    adj_df$attribute[i] <- "adj"
+}
+}
+
+adj_df <- adj_df[,c("product_id", "attribute", "adj", "count")]
+names(adj_df) <- c("product_id", "attributes", "value", "count")
+rownames(adj_df) <- c()
+```
+
+#5. TF-IDF Analysis
+```{r}
+#TF:
+adj_df %>%
+    group_by(product_id) %>% 
+    mutate(Total=sum(count)) ->adj_df
+
+adj_df$tf <- adj_df$count / adj_df$Total
+
+#IDF:
+total_num_documents <- length(unique(adj_df$product_id))
+adj_df %>% 
+  group_by(value) %>% 
+  mutate(numof_doc_with_term = length(product_id)) ->adj_df
+adj_df$idf <- log(total_num_documents / adj_df$numof_doc_with_term)
+
+#Tf-idf weight
+adj_df$weight <- adj_df$tf * adj_df$idf
+
+adj_df <- adj_df[, c("product_id", "attributes", "value", "count", "tf", "weight")]
+```
+
+#6. Add "review_id", "possitive "
+```{r}
+adj_df$possitive <- rep(TRUE, nrow(adj_df))
+final_df <- merge(x = adj_df, y = raw, by = "product_id", all.x = TRUE)
+final_df <- final_df[, c("product_id", "review_id", "attributes", "value", "count", "tf", "weight", "star_rating")]
+final_df[
+  with(final_df, order(weight, tf, decreasing = TRUE)),
+] -> final_df
+```
+
+#7. Combine df
+```{r}
+final_df <- merge(x = final_df, y = cat_df, by = "product_id", all.x = TRUE)
+write.csv(final_df, file = "sentiment_df_v1")
+```
+
+
